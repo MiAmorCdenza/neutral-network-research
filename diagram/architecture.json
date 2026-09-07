@@ -1,0 +1,263 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "生物启发扩散网络 · 十层总纲架构",
+    "quality_profile": "showcase"
+  },
+  "layout": {
+    "mode": "grid",
+    "cols": 3,
+    "origin": [
+      60,
+      60
+    ],
+    "gapX": 110,
+    "gapY": 110,
+    "cellW": 240,
+    "cellH": 96
+  },
+  "components": [
+    {
+      "id": "in",
+      "type": "external",
+      "label": "输入",
+      "sublabel": "带噪状态 x_t · 条件 c",
+      "row": 0,
+      "col": 0
+    },
+    {
+      "id": "l0",
+      "type": "backend",
+      "label": "L0 物理硬件层",
+      "sublabel": "阈值 · 除法归一化 · 稀疏",
+      "row": 1,
+      "col": 0
+    },
+    {
+      "id": "l1",
+      "type": "backend",
+      "label": "L1 突触通信层",
+      "sublabel": "电/化学快慢通路 · STP",
+      "row": 2,
+      "col": 0
+    },
+    {
+      "id": "l2",
+      "type": "backend",
+      "label": "L2 介观束层",
+      "sublabel": "低秩主干 · 自适应髓鞘",
+      "row": 3,
+      "col": 0
+    },
+    {
+      "id": "trunk",
+      "type": "backend",
+      "label": "皮层主干",
+      "sublabel": "折叠预测编码 · L3 注入",
+      "row": 4,
+      "col": 0
+    },
+    {
+      "id": "out",
+      "type": "external",
+      "label": "输出",
+      "sublabel": "x̂0 估计 → 下一步状态",
+      "row": 5,
+      "col": 1
+    },
+    {
+      "id": "errbus",
+      "type": "messagebus",
+      "label": "误差总线",
+      "sublabel": "下橄榄类比 · 低维误差/奖励广播",
+      "row": 3,
+      "col": 2
+    },
+    {
+      "id": "l4",
+      "type": "backend",
+      "label": "L4 价值决策层",
+      "sublabel": "评估器 · RPE/难度 · Go/NoGo",
+      "row": 4,
+      "col": 2
+    },
+    {
+      "id": "l5",
+      "type": "backend",
+      "label": "L5 学习规则层",
+      "sublabel": "资格迹 · 三因素结算",
+      "row": 5,
+      "col": 2
+    },
+    {
+      "id": "l6",
+      "type": "backend",
+      "label": "L6 结构演化层",
+      "sublabel": "关键期三锁 · 凋亡/扩张",
+      "row": 6,
+      "col": 0
+    },
+    {
+      "id": "l7",
+      "type": "backend",
+      "label": "L7 维护层",
+      "sublabel": "睡眠三嵌套 · 胶质",
+      "row": 6,
+      "col": 1
+    },
+    {
+      "id": "l9",
+      "type": "backend",
+      "label": "L9 时间轴层",
+      "sublabel": "相位编码 · CFC · 分频",
+      "row": 6,
+      "col": 2
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "快环 · 推理主干",
+      "wraps": [
+        "in",
+        "l0",
+        "l1",
+        "l2",
+        "trunk",
+        "out"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "慢环 · 评估与学习",
+      "wraps": [
+        "errbus",
+        "l4",
+        "l5"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "贯穿层 · 结构 / 维护 / 时间轴",
+      "wraps": [
+        "l6",
+        "l7",
+        "l9"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "in",
+      "to": "l0",
+      "label": "x_t · c",
+      "labelDy": 24
+    },
+    {
+      "from": "l0",
+      "to": "l1"
+    },
+    {
+      "from": "l1",
+      "to": "l2"
+    },
+    {
+      "from": "l2",
+      "to": "trunk",
+      "label": "全局结构",
+      "labelDy": 24
+    },
+    {
+      "from": "trunk",
+      "to": "out",
+      "label": "x̂0",
+      "labelDy": 24
+    },
+    {
+      "from": "trunk",
+      "to": "errbus",
+      "label": "预测误差",
+      "variant": "dashed"
+    },
+    {
+      "from": "errbus",
+      "to": "l4",
+      "label": "RPE · 惊异度",
+      "labelDy": 24
+    },
+    {
+      "from": "l4",
+      "to": "l5",
+      "label": "价值结算",
+      "labelDy": 24
+    },
+    {
+      "from": "l5",
+      "to": "l1",
+      "label": "三因素更新",
+      "fromSide": "bottom",
+      "via": [
+        [
+          820,
+          1230
+        ],
+        [
+          950,
+          1230
+        ],
+        [
+          950,
+          502
+        ]
+      ]
+    },
+    {
+      "from": "l6",
+      "to": "trunk",
+      "label": "关键期锁定"
+    },
+    {
+      "from": "l7",
+      "to": "l5",
+      "label": "回放 · SHY"
+    },
+    {
+      "from": "l9",
+      "to": "l5",
+      "label": "节拍门控"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "统一迭代算法",
+      "items": [
+        "过度产生 → 按价值选择 → 稳定化 → 保留退化通道",
+        "同一元规则在结构 / 参数 / 程序 / 文化四个尺度运行"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "发育时间表",
+      "items": [
+        "Phase 0 种子展开 → Phase 1 自发校准 → Phase 2 经验塑形 → Phase 3 三锁锁定 → Phase 4 睡眠巩固"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "时间结构",
+      "items": [
+        "dt 阶梯：涟漪 ~1 ms · gamma ~2.5 ms · STDP 语义 ~5-10 ms · 认知帧 ~25 ms",
+        "快环精确而稀疏 · 慢环粗略而全局 · 嵌套比例自相似（5-7）"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "待接入层",
+      "items": [
+        "L8 行动闭环层：传出拷贝 + 小脑前向模型（V7 接入，规格见文档第 9 节）"
+      ]
+    }
+  ]
+}
