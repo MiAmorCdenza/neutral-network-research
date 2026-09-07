@@ -12,7 +12,7 @@
     |-- specs/                         # 结构通道：接口契约 00–12
     |   +-- cards/                     # 模块卡片注册表（每卡一文件，V0 序列见 §6）
     |-- src/bio_net/                   # 参数通道：全部机制实现（扁平包）
-    |   |-- __init__.py                # 包导出 + 版本号
+    |   |-- __init__.py                # 包门面 + 纪律执行点 + 版本锚（内容规格见 §8）
     |   |-- sde.py                     # K.F1–F7
     |   |-- clock.py                   # K.F8–F9 + nominal_dt 契约
     |   |-- registry.py                # K.F10 + MechanismSpec + LockState（锁持久化）
@@ -141,3 +141,76 @@ net.py 只做四路分发（init/step/update/schedule/lock）与组装，不含�
 - **L9.F8 提前到 V0**：nominal_dt 契约（00-kernel K2）需要 dt 阶梯表，故 L9.F8（表 + 断言）归 V0 基础设施，其余 L9 仍在 V6。
 - **K.F10 提前到 V0**：V0 含 L6.F2 三锁，锁需持久化载体，注册表随 V0 落地。
 - 五选择压剂量阶梯（V0 剂量协议）由 configs/doses.yaml 承载，消融脚本在 eval/ablations.py。
+
+## 8. src/bio_net/__init__.py 内容规格
+
+定位：包的公共门面 + 纪律执行点 + 版本锚。**只允许急导入 kernel 三件套（sde/clock/registry）**；其余模块经 PEP 562 延迟访问——保证 import bio_net 零环、轻量（弱调控连接在包级的落点）。
+
+### 8.1 必须导出（__all__ 白名单）
+
+| 符号 | 来源 | 语义 |
+|---|---|---|
+| __version__ | 本文件 | 包版本（与 specs 版本同步：specs v0.1 → 0.1.0） |
+| BUILD_SPECS | 本文件 | 构建依据快照 dict：{"architecture": "v0.2.2", "specs": "v0.1", "repo_layout": "v0.1"}——提交时与 docs/ 对照的版本锚 |
+| register_mechanism / MechanismSpec / LockState | registry | K4 注册表与 L6.F2 锁状态的唯一入口（再导出） |
+| CLOCK_DOMAINS / validate_nominal_dt | clock | T0–T5 常量与名义步长校验（config 校验用） |
+| build_net / save_net / load_net | net（延迟） | 三函数契约的组装入口与五通道 params 序列化 |
+| update_param | 本文件 | **唯一合法的权重修改器**：param.data += delta；断言 delta 无 grad、param.grad is None（K3 纪律 1 的机械执行点） |
+| new_generator | 本文件 | 唯一合法的 generator 工厂（K3 纪律 3：无隐式随机） |
+| bio_no_grad | 本文件 | torch.no_grad 的纪律化别名（T1+ 结算必须包住） |
+
+### 8.2 纪律执行点（K3 三纪律的代码形态）
+
+    from contextlib import contextmanager
+
+    def update_param(param, delta):
+        """T1+ 结算的唯一权重写入通道。"""
+        assert not delta.requires_grad, "生物路径禁止梯度进入 delta"
+        assert param.grad is None, "生物路径参数不得持有 grad（.backward() 只在 eval/）"
+        param.data.add_(delta)
+
+    def new_generator(seed: int) -> torch.Generator:
+        """唯一 generator 工厂——包内禁止 torch.rand* 无 generator 调用。"""
+        return torch.Generator().manual_seed(seed)
+
+    @contextmanager
+    def bio_no_grad():
+        """结算/结构/维护通道的纪律上下文。"""
+        with torch.no_grad():
+            yield
+
+### 8.3 延迟导入协议（PEP 562）
+
+    import importlib
+
+    _LAZY_MODULES = ("development", "l0", "l1", "l2", "l3", "l4", "l5", "l6",
+                     "l7", "l8", "l8c", "l9", "data", "energy", "curriculum",
+                     "net", "scheduler")
+    _LAZY_SYMBOLS = {"build_net": "net", "save_net": "net", "load_net": "net"}
+
+    def __getattr__(name):
+        if name in _LAZY_MODULES:
+            mod = importlib.import_module(f"bio_net.{name}")
+            globals()[name] = mod
+            return mod
+        if name in _LAZY_SYMBOLS:
+            mod = importlib.import_module(f"bio_net.{_LAZY_SYMBOLS[name]}")
+            return getattr(mod, name)
+        raise AttributeError(name)
+
+规则：kernel 三件套（sde/clock/registry）在 __init__ 顶部**急导入**（它们是根，零内部依赖）；其余全部延迟。包内互引一律用 `from bio_net import l2`（走本协议）或 `import bio_net.l2`（标准子模块导入）；**禁止 from bio_net.l2 import xxx 直接抓函数跨层**（跨层白名单见 §3）。
+
+### 8.4 版本同步规则
+
+- 每次 specs/ 或 docs/ 结构性变更：更新 BUILD_SPECS 并 __version__ 小版本 +1；
+- K6 提交时附 __version__ 与 BUILD_SPECS 快照（版本可追溯）；
+- eval/ 启动时校验 BUILD_SPECS 与 docs/specs 文件头版本一致，不一致告警（不阻断）。
+
+### 8.5 验收测试（tests/test_init.py）
+
+1. import bio_net 后：sde/clock/registry 已在 sys.modules；l5 等延迟模块尚未加载（延迟导入生效）；
+2. 白名单：__all__ 与 8.1 表一致；__getattr__ 未知名字抛 AttributeError；
+3. update_param：delta 带 grad → 抛；param.grad 非 None → 抛；正常路径 param.data 变化正确且逐元素等于手工重算；
+4. new_generator 确定性：同 seed 两个 generator 产出同序列；
+5. bio_no_grad：退出后 torch.is_grad_enabled() 恢复原状态；
+6. BUILD_SPECS 与 docs/specs 文件头版本对照（读文件断言）。
