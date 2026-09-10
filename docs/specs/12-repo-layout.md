@@ -46,7 +46,7 @@
 | development.py | DEV.F1 expand · F2 position_field · F3 temporal_identity · F4 chemoaffinity_connectivity · F5 canalization_sample | T4 | **V0** |
 | development.py | DEV.F6 retinal_waves · F7 linsker_hebb · F8 self_calibrate | T2 | **V0**（Phase 1） |
 | development.py | DEV.F9 meta_iteration | T3 | V4 |
-| l0.py | L0.F1 node_activation · F2 refractory_mask · F3 dendritic_and · F4 divisive_normalize · F5 energy_cost · F6 canalized_params · F7 intrinsic_plasticity | T0（F7=T2） | **V0** |
+| l0.py | L0.F1 node_activation（全或无） · F2 refractory_mask · F3 dendritic_and · F4 divisive_normalize · F5 energy_cost · F6 canalized_params · F7 intrinsic_plasticity · F8 membrane_integrate（LIF） | T0（F7=T2） | **V0** |
 | l1.py | L1.F1 electrical_skip · F2 ampa_channel · F3 nmda_gate · F4 mglur_integrator · F5 release_probability · F6 stochastic_release · F7 stp_step · F8 delay_line · F9 synapse_forward | T0 | **V0** |
 | l1.py | L1.F10 phase_multiplex（占位） | T0 | V6（由 l9 实现） |
 | l2.py | L2.F1 low_rank_tract · F2 tract_grad_projection | T1 | **V0**（最小形态） |

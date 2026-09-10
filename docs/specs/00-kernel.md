@@ -16,6 +16,9 @@
 - 前向（加噪/抽象/压缩）：`dx = f(x,t)dt + g(t)dw`
 - 反向（去噪/推断/生成）：`dx = [f(x,t) − g(t)²·s_θ(x,t)]dt + g(t)dw̄`，s_θ = ∇_x log p_t(x)
 - 目标（变分自由能 ≈ 去噪分数匹配 ELBO）：`min E_{t,x0,ε} λ(t)·‖s_θ(x_t,t) − ∇ log p_t(x_t|x0)‖²`，λ(t) = g(t)²
+- **f/g 显式式（VP，默认）**：`β(t)=βmin+t(βmax−βmin)`（默认 βmin=0.1、βmax=20）；`f(x,t) = −½·β(t)·x`；`g(t) = √β(t)`。
+- **f/g 显式式（VE）**：`f(x,t) = 0`；`g(t) = σmin·(σmax/σmin)^t·√(2·ln(σmax/σmin))`（由 dσ²/dt = 2σ²·ln(σmax/σmin) 取 √(dσ²/dt) 得）。
+- 实现约定：f/g 只允许由 K.F4a 提供（单一事实来源）；K.F4 反向步与 K.F7 权重 λ(t)=g(t)² 一律调用 K.F4a，禁止各自复制公式。
 
 ### K.F1 `sde_marginal(x0, t, sde) -> (mean, std)`
 - 接口：`x0: [B,D]`，`t: [B]∈[0,1]`；返回 `mean, std: [B,D]`（p_t(x_t|x0) 的解析边缘矩）。
@@ -32,20 +35,25 @@
 - 算法：`s = −(x_t − mean)/std²`。
 - 特性：[纯函数]；与 K.F2 配对——同一 (x0,t,ε) 下 s = −ε/std。
 
-### K.F4 `reverse_euler_maruyama(x, t, dt, score, sde, rng) -> x'`
-- 算法：`x' = x − [f(x,t) − g(t)²·score]·dt + g(t)·√dt·z`，z~N(0,I)。
-- 特性：[确定性(rng)]；dt 为负（反向时间积分）。
+### K.F4a `sde_coeffs(x, t, sde) -> (f, g)`
+- 算法：VP：`f = −½·β(t)·x`（形状 [B,D]），`g = √β(t)`（形状 [B]）；VE：`f = 0`（形状 [B,D]），`g = σmin·(σmax/σmin)^t·√(2·ln(σmax/σmin))`（形状 [B]）。
+- 特性：[纯函数]；f 逐样本逐维；g 逐样本标量（各向同性，广播到 D 维）；t 越界抛错。
+
+### K.F4 `reverse_euler_maruyama(x, t, h, score, sde, rng) -> x'`
+- 算法（反向 Euler-Maruyama；**h>0 为反向步长**，x_{t−h} 的更新）：`x' = x − [f(x,t) − g(t)²·score]·h + g(t)·√h·z`，z~N(0,I)；f、g 来自 K.F4a。
+- 符号依据（Anderson 1982 反向 SDE + VP 直觉校验）：`x_{t−h} = x_t − h·[f−g²s] + g·√h·z`；VP 代入得 `+h·(½β·x + β·s)`——沿得分方向推进（趋向数据流形）、抗收缩，两项符号均为正；若实现成 `x − [f−g²s]·dt` 且传负 dt，漂移项符号会反向（原规格错误，已修正）。
+- 特性：[确定性(rng)]；h ≤ 0 抛错；调用方按 t 递减推进（K.F6 从 t=1 到 0 等距，h = 1/n_steps）。
 
 ### K.F5 `langevin_corrector(x, t, score, snr, rng) -> x'`
 - 算法：`ε² = 2(snr·σ_z/σ_s)²`；`x' = x + (ε²/2)·score + ε·z`。
 - 特性：[确定性(rng)]；σ_z/σ_s 为当前 z 与 score 的经验范数比。
 
 ### K.F6 `pc_sampler(score_fn, sde, n_steps, n_correct, snr, rng) -> x0`
-- 算法：predictor（K.F4 反向 Euler-Maruyama）与 corrector（K.F5 Langevin）×n_correct 交替，t: 1→0 等距。
+- 算法：predictor（K.F4 反向 Euler-Maruyama，h = 1/n_steps）与 corrector（K.F5 Langevin）×n_correct 交替，t: 1→0 等距。
 - 特性：[确定性(rng)]；score_fn 在 eval 模式调用。
 
 ### K.F7 `dsm_loss(score_fn, x0, t, sde, eps) -> scalar`
-- 算法：`L = mean(λ(t)·‖s_θ(x_t,t) − s‖²)`，λ(t)=g(t)²。
+- 算法：`L = mean(λ(t)·‖s_θ(x_t,t) − s‖²)`，λ(t)=g(t)²（g 来自 K.F4a）。
 - 特性：[纯函数]；这是全项目唯一"总损失"口径（L4 价值、L5 选择压皆围绕它展开）。
 
 ## K2 时钟系统（嵌套节拍 / dt 阶梯，架构 §5 落地）
@@ -74,6 +82,30 @@
   1. 生物路径零反向传播——三因素/价值/结构/维护全部走 `no_grad` + `param.data`；
   2. 基线隔离——`.backward()` 仅允许出现在 `eval.py` 的 backprop 基线中；
   3. 无隐式随机——除种子函数外，`torch.rand*` 必须带 generator。
+- **语言与文档约定**（用户约定，全部代码提交适用）：
+  1. 文件编码一律 UTF-8；
+  2. Debug/错误信息一律**英语**：异常消息、assert 消息、日志文本、测试失败消息——不得出现中文；
+  3. 注释可英语可中文，但 docstring 必须用**主流注释解析器可解析的结构**：统一 **Google 风格**（`Args:` / `Returns:` / `Raises:` / `Yields:` 字段，Sphinx napoleon / pdoc / VS Code IntelliSense 均可解析）；字段名与结构必须规范，描述文本语言不限；
+  4. 类型注解必填（接口契约的一部分）；模块级 docstring 须含本模块函数 ID 清单与生物出处（机制留痕）；
+  5. TODO/FIXME 用标准标记（`TODO(name): ...`），保持可被 lint 工具识别。
+- 模板示例（结构必须保留，描述文本可替换）：
+
+  ```
+  def sde_marginal(x0, t, sde):
+      """Compute analytic marginal moments of the forward SDE (K.F1).
+
+      Args:
+          x0: source samples, shape [B, D].
+          t: noise time in [0, 1], shape [B].
+          sde: noise schedule object (see SdeConfig).
+
+      Returns:
+          tuple (mean, std): moments of p_t(x_t | x0), each of shape [B, D].
+
+      Raises:
+          ValueError: if any entry of t is outside [0, 1].
+      """
+  ```
 - 命名：函数 ID 形如 `L0.F1`；实现文件 `src/bio_net/<layer>.py`；状态一律注册为 buffer。
 - 包级门面与纪律执行点（__init__.py 内容规格）见 12-repo-layout §8。
 

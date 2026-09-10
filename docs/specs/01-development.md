@@ -24,7 +24,7 @@
 ### DEV.F4 `chemoaffinity_connectivity(pos, labels, sigma_d, sigma_l, rng) -> Tensor[N,N] bool`
 - 生物：化学亲和——Eph/ephrin 梯度生成拓扑投射；生长锥只响应局部化学信号，无全局蓝图。
 - 算法：`p_ij ∝ exp(−‖p_i−p_j‖²/2σ_d²)·exp(−‖l_i−l_j‖²/2σ_l²)`；仅在局部邻域（top-m 候选）内采样邻接。
-- 特性：[确定性(rng)]；连接稀疏（度分布受 σ_d 控制）；对称候选（先采样后按方向拆分兴奋/抑制）。
+- 特性：[确定性(rng)]；连接稀疏（度分布受 σ_d 控制）；对称候选（先采样后按方向拆分兴奋/抑制）；**σ_d 按层配置——扇入异质性的参数载体**（颗粒层 3–7 输入 vs 浦肯野全扩展 10^5 级，见 L8C.F1/F2；能量系统经 E.F3 布线成本 + L6.F7 软凋亡进一步收缩该分布到功能合适处）。
 
 ### DEV.F5 `canalization_sample(master_rng, seed_rng, cfg) -> (coarse, fine)`
 - 算法：粗参数（阈值形式、归一化结构、带宽）自 master_rng——跨种子同分布同实现；细参数自 seed_rng。确定性与差异性的分离发生在结构尺度（架构原则 5）。
